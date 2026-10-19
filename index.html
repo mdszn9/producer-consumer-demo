@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Producer–Consumer Race Conditions</title>
+<meta name="description" content="Interactive visual demonstration of race conditions in the bounded-buffer producer–consumer problem, and how semaphores fix them.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --border: #dcdfe8;
+  --text: #171a23;
+  --muted: #5b6275;
+  --prod: #2f6fe4;
+  --prod-soft: #dce7fd;
+  --cons: #d9731a;
+  --cons-soft: #fbe7d4;
+  --ok: #1f9d55;
+  --ok-soft: #d6f2e1;
+  --bad: #d93838;
+  --bad-soft: #fbdcdc;
+  --warn: #b58300;
+  --mem: #7a4fd6;
+  --mem-soft: #e9e0fb;
+  --code-bg: #f3f4f9;
+  --shadow: 0 1px 2px rgba(20,24,40,.06), 0 4px 16px rgba(20,24,40,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1117;
+    --surface: #171a23;
+    --surface-2: #1f2330;
+    --border: #2c3142;
+    --text: #e8eaf1;
+    --muted: #9aa1b5;
+    --prod: #6d9cff;
+    --prod-soft: #1d2a48;
+    --cons: #ffa25a;
+    --cons-soft: #3a2817;
+    --ok: #3ccf7d;
+    --ok-soft: #173326;
+    --bad: #ff6b6b;
+    --bad-soft: #3d1c1f;
+    --warn: #f2c14e;
+    --mem: #b18cff;
+    --mem-soft: #2a2140;
+    --code-bg: #12141b;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1117;
+  --surface: #171a23;
+  --surface-2: #1f2330;
+  --border: #2c3142;
+  --text: #e8eaf1;
+  --muted: #9aa1b5;
+  --prod: #6d9cff;
+  --prod-soft: #1d2a48;
+  --cons: #ffa25a;
+  --cons-soft: #3a2817;
+  --ok: #3ccf7d;
+  --ok-soft: #173326;
+  --bad: #ff6b6b;
+  --bad-soft: #3d1c1f;
+  --warn: #f2c14e;
+  --mem: #b18cff;
+  --mem-soft: #2a2140;
+  --code-bg: #12141b;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+a { color: var(--prod); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+/* ---------- header ---------- */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+header.top .wrap { display: flex; align-items: center; gap: 16px; height: 56px; }
+.brand { font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
+.brand span { color: var(--prod); }
+nav.links { display: flex; gap: 4px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+nav.links a {
+  color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500;
+  padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+}
+nav.links a:hover { background: var(--surface-2); color: var(--text); }
+.theme-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  width: 34px; height: 34px; border-radius: 8px; cursor: pointer; flex: none; font-size: 16px;
+}
+
+/* ---------- hero ---------- */
+.hero { padding: 56px 0 24px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 12px; font-weight: 700; color: var(--muted); }
+h1 { font-size: clamp(32px, 5vw, 52px); line-height: 1.08; letter-spacing: -.025em; margin: 10px 0 16px; }
+h1 .p { color: var(--prod); } h1 .c { color: var(--cons); } h1 .r { color: var(--bad); }
+.lede { font-size: 19px; color: var(--muted); max-width: 760px; margin: 0; }
+.hero-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+.hero-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
+.hero-card b { display: block; font-size: 28px; letter-spacing: -.02em; }
+.hero-card span { color: var(--muted); font-size: 14px; }
+
+/* ---------- sections ---------- */
+section.block { padding: 40px 0; border-top: 1px solid var(--border); }
+section.block:first-of-type { border-top: 0; }
+h2 { font-size: clamp(24px, 3.2vw, 32px); letter-spacing: -.02em; margin: 6px 0 8px; line-height: 1.2; }
+h3 { font-size: 18px; margin: 0 0 8px; }
+.sec-num { color: var(--muted); font-weight: 700; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+.sub { color: var(--muted); max-width: 780px; margin: 0 0 20px; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid2 > *, .sim-cols > *, .race-stage > * { min-width: 0; }
+.callout { border-left: 4px solid var(--prod); background: var(--surface); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 16px 0; }
+.callout.bad { border-color: var(--bad); }
+.callout.ok { border-color: var(--ok); }
+
+pre.code {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 16px; margin: 0; font-size: 13.5px; line-height: 1.65; overflow-x: auto;
+}
+.kw { color: var(--mem); font-weight: 600; } .cm { color: var(--muted); font-style: italic; }
+.hl-bad { background: var(--bad-soft); border-radius: 4px; padding: 0 3px; }
+.hl-ok { background: var(--ok-soft); border-radius: 4px; padding: 0 3px; }
+
+/* ---------- buttons / controls ---------- */
+.btn {
+  font: 600 14px Inter, sans-serif; border-radius: 10px; padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  transition: background .15s, transform .05s;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.prod { background: var(--prod); border-color: var(--prod); color: #fff; }
+.btn.cons { background: var(--cons); border-color: var(--cons); color: #fff; }
+.btn.primary { background: var(--text); border-color: var(--text); color: var(--bg); }
+.btn.prod:hover, .btn.cons:hover, .btn.primary:hover { filter: brightness(1.08); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button {
+  border: 0; background: transparent; color: var(--muted); font: 600 13px Inter, sans-serif;
+  padding: 6px 12px; border-radius: 8px; cursor: pointer;
+}
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.seg button.on.bad { color: var(--bad); } .seg button.on.ok { color: var(--ok); }
+label.ctl { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; font-weight: 500; }
+input[type=range] { accent-color: var(--prod); width: 120px; }
+select { font: 500 13px Inter, sans-serif; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+
+/* ---------- Section 1: instruction-level race ---------- */
+.race-stage { display: grid; grid-template-columns: 1fr 200px 1fr; gap: 16px; align-items: stretch; margin-top: 16px; }
+.cpu {
+  border: 2px solid var(--border); border-radius: 14px; padding: 14px; background: var(--surface);
+  transition: border-color .2s, box-shadow .2s;
+}
+.cpu.P { --tc: var(--prod); --tcs: var(--prod-soft); }
+.cpu.C { --tc: var(--cons); --tcs: var(--cons-soft); }
+.cpu.active { border-color: var(--tc); box-shadow: 0 0 0 4px var(--tcs); }
+.cpu-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cpu-title { font-weight: 700; color: var(--tc); }
+.cpu-title small { color: var(--muted); font-weight: 500; }
+.reg {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+}
+.reg .box {
+  min-width: 46px; height: 38px; display: grid; place-items: center; border-radius: 9px;
+  border: 2px dashed var(--tc); font: 700 18px "JetBrains Mono", monospace; color: var(--text);
+  background: var(--tcs);
+}
+.instr { list-style: none; margin: 0; padding: 0; font-family: "JetBrains Mono", monospace; font-size: 13.5px; }
+.instr li {
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; margin-bottom: 4px;
+  border: 1px solid transparent; transition: background .2s;
+}
+.instr li .n { color: var(--muted); font-size: 11px; width: 18px; }
+.instr li.done { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent); }
+.instr li.next { background: var(--tcs); border-color: var(--tc); font-weight: 700; }
+.instr li .tag { margin-left: auto; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+.cpu .stepbtn { width: 100%; margin-top: 8px; }
+
+.memory { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; }
+.memcell {
+  width: 130px; height: 110px; border-radius: 18px; border: 3px solid var(--mem); background: var(--mem-soft);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;
+}
+.memcell .lbl { font: 600 12px "JetBrains Mono", monospace; color: var(--mem); }
+.memcell .val { font: 800 46px/1 "JetBrains Mono", monospace; }
+.memcell.flash { animation: memflash .6s; }
+@keyframes memflash { 0% { transform: scale(1); } 40% { transform: scale(1.1); box-shadow: 0 0 0 10px color-mix(in srgb, var(--mem) 25%, transparent); } 100% { transform: scale(1); } }
+.expect { font-size: 13px; color: var(--muted); }
+.verdict { font-weight: 700; padding: 6px 12px; border-radius: 999px; font-size: 14px; }
+.verdict.ok { background: var(--ok-soft); color: var(--ok); }
+.verdict.bad { background: var(--bad-soft); color: var(--bad); }
+.verdict.pending { background: var(--surface-2); color: var(--muted); }
+
+.token {
+  position: fixed; z-index: 50; pointer-events: none; font: 800 20px "JetBrains Mono", monospace;
+  padding: 4px 10px; border-radius: 9px; color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+  transition: transform .55s cubic-bezier(.5,0,.25,1), opacity .2s;
+}
+
+.timeline { margin-top: 18px; }
+.tl-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.tl-row { display: grid; grid-template-columns: 90px repeat(6, 1fr); gap: 4px; align-items: center; margin-bottom: 4px; }
+.tl-row .who { font-size: 12px; font-weight: 700; }
+.tl-cell { height: 34px; border-radius: 6px; background: var(--surface-2); font: 600 11px "JetBrains Mono", monospace; display: grid; place-items: center; color: #fff; text-align: center; padding: 0 2px; overflow: hidden; }
+.tl-cell.P { background: var(--prod); } .tl-cell.C { background: var(--cons); }
+.tl-cell.mem { background: var(--mem-soft); color: var(--text); border: 1px solid var(--mem); }
+.narration { margin-top: 14px; min-height: 52px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); font-size: 15px; }
+
+/* ---------- Section 2: all interleavings ---------- */
+.inter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; }
+.inter {
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface); cursor: pointer;
+  transition: transform .12s, box-shadow .12s; text-align: left; font: inherit; color: inherit;
+}
+.inter:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.inter .strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-bottom: 8px; }
+.inter .strip i { height: 22px; border-radius: 4px; font: 700 10px "JetBrains Mono", monospace; color: #fff; display: grid; place-items: center; font-style: normal; }
+.inter .strip i.P { background: var(--prod); } .inter .strip i.C { background: var(--cons); }
+.inter .res { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.inter .res b { font: 800 18px "JetBrains Mono", monospace; }
+.inter.good { border-color: var(--ok); background: var(--ok-soft); }
+.inter.good .res b { color: var(--ok); }
+.inter.badr .res b { color: var(--bad); }
+.tally { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.tally div { padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); font-size: 14px; }
+.tally b { font: 800 22px "JetBrains Mono", monospace; margin-right: 6px; }
+.bars { display: flex; align-items: flex-end; gap: 18px; height: 150px; padding: 10px 6px 0; }
+.bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
+.bar .fill { width: 100%; max-width: 80px; border-radius: 8px 8px 0 0; transition: height .4s; }
+.bar .cap { font: 700 13px "JetBrains Mono", monospace; }
+.bar .x { font-size: 12px; color: var(--muted); }
+
+/* ---------- Section 3: bounded buffer sim ---------- */
+.sim-top { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.buffer-wrap { position: relative; padding: 26px 0 30px; }
+.buffer { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+.slot {
+  position: relative; aspect-ratio: 1 / 1; border-radius: 12px; border: 2px dashed var(--border);
+  display: grid; place-items: center; background: var(--surface-2);
+}
+.slot .idx { position: absolute; top: 4px; left: 7px; font: 600 10px "JetBrains Mono", monospace; color: var(--muted); }
+.chip {
+  width: 72%; height: 72%; border-radius: 10px; display: grid; place-items: center;
+  font: 800 clamp(11px, 1.8vw, 18px) "JetBrains Mono", monospace; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.18);
+}
+.chip.pop { animation: pop .35s cubic-bezier(.3,1.6,.5,1); }
+@keyframes pop { from { transform: scale(.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.slot.err { animation: slotErr .9s; }
+@keyframes slotErr {
+  0%, 100% { border-color: var(--border); background: var(--surface-2); }
+  15%, 60% { border-color: var(--bad); background: var(--bad-soft); transform: translateX(-3px); }
+  30% { transform: translateX(3px); } 45% { transform: translateX(-2px); }
+}
+.slot .burst {
+  position: absolute; inset: -6px; display: grid; place-items: center; font: 800 11px Inter, sans-serif;
+  color: var(--bad); pointer-events: none; animation: burst 1.2s forwards; text-align: center; line-height: 1.1;
+}
+@keyframes burst { 0% { opacity: 0; transform: translateY(0) scale(.6); } 20% { opacity: 1; transform: translateY(-14px) scale(1.05); } 100% { opacity: 0; transform: translateY(-34px) scale(1); } }
+.ptr-row { position: absolute; left: 0; right: 0; display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; pointer-events: none; }
+.ptr-row.top { top: 0; } .ptr-row.bot { bottom: 0; }
+.ptr { text-align: center; font: 700 12px "JetBrains Mono", monospace; opacity: 0; transition: opacity .2s; }
+.ptr.on { opacity: 1; }
+.ptr.in { color: var(--prod); } .ptr.out { color: var(--cons); }
+
+.sim-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+.threads { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.thread {
+  flex: 1 1 120px; border-radius: 10px; padding: 8px 10px; border: 2px solid var(--border); background: var(--surface);
+  font-size: 12px; transition: border-color .15s, box-shadow .15s;
+}
+.thread.P { --tc: var(--prod); --tcs: var(--prod-soft); } .thread.C { --tc: var(--cons); --tcs: var(--cons-soft); }
+.thread.running { border-color: var(--tc); box-shadow: 0 0 0 3px var(--tcs); }
+.thread .nm { font-weight: 800; color: var(--tc); font-size: 14px; }
+.thread .st { float: right; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+.thread .st.running { background: var(--tc); color: #fff; }
+.thread .st.blocked { background: var(--bad-soft); color: var(--bad); }
+.thread .st.spinning { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.thread .meta { color: var(--muted); font-family: "JetBrains Mono", monospace; margin-top: 4px; }
+.codebox { font: 12.5px/1.5 "JetBrains Mono", monospace; background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px; padding: 8px 0; overflow-x: auto; }
+.codebox .ln { display: flex; align-items: center; gap: 8px; padding: 1px 12px; white-space: pre; min-height: 22px; }
+.codebox .ln.hot { background: var(--tcs); }
+.codebox .ln.crit { box-shadow: inset 3px 0 0 var(--bad); }
+.codebox .ln.lock { box-shadow: inset 3px 0 0 var(--ok); }
+.codebox .badges { margin-left: auto; display: flex; gap: 3px; padding-left: 8px; }
+.codebox .bdg { font: 700 10px Inter, sans-serif; padding: 1px 5px; border-radius: 4px; color: #fff; background: var(--tc); }
+.codebox.P { --tc: var(--prod); --tcs: var(--prod-soft); } .codebox.C { --tc: var(--cons); --tcs: var(--cons-soft); }
+.codehead { font-size: 13px; font-weight: 700; margin: 0 0 6px; display: flex; justify-content: space-between; }
+.codehead .legend { font-weight: 500; color: var(--muted); font-size: 11px; }
+
+.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 16px 0; }
+.stat { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.stat .k { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.stat .v { font: 800 22px "JetBrains Mono", monospace; }
+.stat.bad .v { color: var(--bad); } .stat.okk .v { color: var(--ok); }
+.stat.alarm { background: var(--bad-soft); }
+.chart-wrap { background: var(--surface-2); border-radius: 12px; padding: 12px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.chart-legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+canvas { width: 100%; display: block; }
+.log { height: 214px; overflow-y: auto; font: 12px/1.5 "JetBrains Mono", monospace; background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; }
+.log div { padding: 1px 0; }
+.log .e { color: var(--bad); font-weight: 700; }
+.log .t { color: var(--muted); }
+.log .P { color: var(--prod); } .log .C { color: var(--cons); }
+.semrow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.sem { padding: 6px 10px; border-radius: 10px; background: var(--ok-soft); font: 600 13px "JetBrains Mono", monospace; }
+.sem b { font-size: 16px; margin-left: 4px; }
+.sem .q { color: var(--muted); font-size: 11px; margin-left: 6px; }
+
+/* ---------- Section 4: fix ---------- */
+.concepts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+.concept { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.concept h3 { font-size: 16px; }
+.concept p { margin: 0; color: var(--muted); font-size: 14px; }
+.diagram svg { width: 100%; height: auto; display: block; }
+footer { padding: 32px 0 48px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--border); }
+
+@media (max-width: 860px) {
+  .race-stage { grid-template-columns: 1fr; }
+  .memory { flex-direction: row; flex-wrap: wrap; }
+  .grid2, .sim-cols, .concepts { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(3, 1fr); }
+  .hero-strip { grid-template-columns: 1fr; }
+  .tl-row { grid-template-columns: 60px repeat(6, 1fr); }
+  .tl-cell { font-size: 9px; }
+}
+@media (max-width: 520px) {
+  nav.links { display: none; }
+  .theme-btn { margin-left: auto; }
+  .buffer, .ptr-row { gap: 4px; }
+  .slot { border-radius: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">Producer<span>/</span>Consumer</div>
+    <nav class="links">
+      <a href="#problem">Problem</a>
+      <a href="#race">Race step-through</a>
+      <a href="#interleavings">All interleavings</a>
+      <a href="#simulator">Buffer simulator</a>
+      <a href="#fix">The fix</a>
+    </nav>
+    <button class="theme-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <div class="eyebrow">Operating Systems · Process Synchronization</div>
+  <h1>When a <span class="p">producer</span> and a <span class="c">consumer</span><br>share memory, you get a <span class="r">race</span>.</h1>
+  <p class="lede">The bounded-buffer problem looks simple: one thread puts items in, another takes them out, and a shared <code>count</code> tracks how full the buffer is. But <code>count++</code> and <code>count--</code> aren't single steps, so the result depends on exactly when the CPU switches threads. Step through it, try every interleaving, and watch a real buffer break.</p>
+  <div class="hero-strip">
+    <div class="hero-card"><b class="mono">3</b><span>machine instructions hide inside one <code>count++</code></span></div>
+    <div class="hero-card"><b class="mono" style="color:var(--bad)">18 / 20</b><span>possible interleavings of one <code>++</code> and one <code>--</code> give the wrong answer</span></div>
+    <div class="hero-card"><b class="mono" style="color:var(--ok)">0</b><span>errors once the buffer is guarded with semaphores and a mutex</span></div>
+  </div>
+</div>
+
+<!-- ================= 0. PROBLEM ================= -->
+<section class="block" id="problem">
+  <div class="sec-num">00 · Setup</div>
+  <h2>The bounded buffer, unsynchronized</h2>
+  <p class="sub">This is the textbook version (Silberschatz, <i>Operating System Concepts</i>). Both loops are correct when you read each one alone. The bug only shows up when they run at the same time, because both write to <code>count</code>.</p>
+  <div class="grid2">
+    <div>
+      <div class="codehead" style="color:var(--prod)">Producer</div>
+<pre class="code"><span class="kw">while</span> (<span class="kw">true</span>) {
+    <span class="cm">/* produce an item in next_produced */</span>
+    <span class="kw">while</span> (count == BUFFER_SIZE)
+        ; <span class="cm">/* do nothing: buffer full */</span>
+    buffer[in] = next_produced;
+    in = (in + 1) % BUFFER_SIZE;
+    <span class="hl-bad">count++;</span>
+}</pre>
+    </div>
+    <div>
+      <div class="codehead" style="color:var(--cons)">Consumer</div>
+<pre class="code"><span class="kw">while</span> (<span class="kw">true</span>) {
+    <span class="kw">while</span> (count == 0)
+        ; <span class="cm">/* do nothing: buffer empty */</span>
+    next_consumed = buffer[out];
+    out = (out + 1) % BUFFER_SIZE;
+    <span class="hl-bad">count--;</span>
+    <span class="cm">/* consume the item in next_consumed */</span>
+}</pre>
+    </div>
+  </div>
+  <div class="callout bad"><b>The hidden problem:</b> the CPU doesn't execute <code>count++</code> in one step. It compiles to <b>load → modify → store</b>. If the scheduler preempts a thread between its load and its store, the other thread's update gets overwritten. The next section shows this one instruction at a time.</div>
+</section>
+
+<!-- ================= 1. RACE STEP-THROUGH ================= -->
+<section class="block" id="race">
+  <div class="sec-num">01 · Race condition, up close</div>
+  <h2>Run <code>count++</code> and <code>count--</code> one instruction at a time</h2>
+  <p class="sub"><code>count</code> starts at <b>5</b>. One item is produced and one is consumed, so the right answer is still <b>5</b>. Click the step buttons in any order to act as the scheduler, or pick a preset interleaving.</p>
+
+  <div class="panel">
+    <div class="row" style="justify-content:space-between">
+      <div class="row">
+        <span style="font-size:13px;color:var(--muted);font-weight:600">Preset:</span>
+        <div class="seg" id="presetSeg">
+          <button data-seq="PPPCCC">Serial (safe)</button>
+          <button data-seq="PPCCPC">Lost increment</button>
+          <button data-seq="PPCCCP">Lost decrement</button>
+        </div>
+        <button class="btn primary" id="playPreset">▶ Play</button>
+      </div>
+      <button class="btn" id="raceReset">↺ Reset</button>
+    </div>
+
+    <div class="race-stage">
+      <div class="cpu P" id="cpuP">
+        <div class="cpu-head">
+          <div class="cpu-title">Producer <small>count++</small></div>
+          <div class="reg">R1 <div class="box" id="regP">–</div></div>
+        </div>
+        <ol class="instr" id="instrP"></ol>
+        <button class="btn prod stepbtn" id="stepP">Step producer ▸</button>
+      </div>
+
+      <div class="memory">
+        <div class="memcell" id="mem"><div class="lbl">count</div><div class="val" id="memVal">5</div></div>
+        <div class="expect">expected after both: <b class="mono">5</b></div>
+        <div class="verdict pending" id="verdict">Not finished yet</div>
+      </div>
+
+      <div class="cpu C" id="cpuC">
+        <div class="cpu-head">
+          <div class="cpu-title">Consumer <small>count--</small></div>
+          <div class="reg">R2 <div class="box" id="regC">–</div></div>
+        </div>
+        <ol class="instr" id="instrC"></ol>
+        <button class="btn cons stepbtn" id="stepC">Step consumer ▸</button>
+      </div>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-head"><span><b>Execution timeline</b> (what the scheduler did)</span><span id="tlSeq" class="mono"></span></div>
+      <div class="tl-row"><div class="who" style="color:var(--prod)">Producer</div><div class="tl-cells" style="display:contents" id="tlP"></div></div>
+      <div class="tl-row"><div class="who" style="color:var(--cons)">Consumer</div><div style="display:contents" id="tlC"></div></div>
+      <div class="tl-row"><div class="who" style="color:var(--mem)">count</div><div style="display:contents" id="tlM"></div></div>
+    </div>
+    <div class="narration" id="narration">Pick a preset or click a step button to begin.</div>
+  </div>
+</section>
+
+<!-- ================= 2. ALL INTERLEAVINGS ================= -->
+<section class="block" id="interleavings">
+  <div class="sec-num">02 · Every possible schedule</div>
+  <h2>The scheduler has 20 choices. Only 2 of them are correct.</h2>
+  <p class="sub">With 3 producer instructions and 3 consumer instructions there are C(6,3) = 20 ways to interleave them. Each card below is one schedule, read left to right. Whichever thread <b>stores last</b> wins, and the other thread's update is lost. Click a card to replay it above.</p>
+  <div class="grid2" style="align-items:start">
+    <div>
+      <div class="tally" id="tally"></div>
+      <div class="panel" style="padding:14px">
+        <h3 style="font-size:14px;margin-bottom:0">Final value of <code>count</code> across all 20 schedules</h3>
+        <div class="bars" id="bars"></div>
+      </div>
+    </div>
+    <div class="callout bad" style="margin:0">
+      <b>Why only 2?</b> The result is correct only when one thread's whole load-modify-store finishes before the other thread's <i>load</i>. That happens in exactly two schedules: <span class="mono">PPPCCC</span> and <span class="mono">CCCPPP</span>. In every other schedule the two threads overlap, and one update is lost.<br><br>
+      This is a <b>race condition</b>: the outcome depends on the relative timing of threads that access shared data, and at least one of them writes to it. The fix is to make those three instructions a <b>critical section</b> that only one thread can be inside at a time.
+    </div>
+  </div>
+  <div class="inter-grid" id="interGrid" style="margin-top:16px"></div>
+</section>
+
+<!-- ================= 3. SIMULATOR ================= -->
+<section class="block" id="simulator">
+  <div class="sec-num">03 · Live bounded-buffer simulator</div>
+  <h2>Watch the buffer break, then watch semaphores fix it</h2>
+  <p class="sub">An 8-slot circular buffer shared by multiple threads. A random scheduler can preempt a thread after any instruction. With no synchronization, <code>count</code> drifts away from the real number of items. Then producers overwrite items that were never consumed (<b style="color:var(--bad)">lost items</b>), and consumers read slots that hold nothing (<b style="color:var(--bad)">empty reads</b>). Switch to semaphores and run it again.</p>
+
+  <div class="panel">
+    <div class="sim-top">
+      <div class="row">
+        <div class="seg" id="modeSeg">
+          <button data-mode="race" class="on bad">⚠ No synchronization</button>
+          <button data-mode="sem" class="ok">🔒 Semaphores + mutex</button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="simPlay">▶ Run</button>
+        <button class="btn" id="simStep">Step</button>
+        <button class="btn" id="simReset">↺ Reset</button>
+      </div>
+    </div>
+    <div class="row" style="gap:18px;margin-bottom:6px">
+      <label class="ctl">Producers <select id="nP"><option>1</option><option selected>2</option><option>3</option></select></label>
+      <label class="ctl">Consumers <select id="nC"><option>1</option><option selected>2</option><option>3</option></select></label>
+      <label class="ctl">Speed <input type="range" id="speed" min="1" max="60" value="12"><span class="mono" id="speedLbl">12/s</span></label>
+      <label class="ctl" title="Probability the scheduler preempts a thread after any single instruction">Preemption <input type="range" id="chaos" min="0" max="100" value="45"><span class="mono" id="chaosLbl">45%</span></label>
+    </div>
+
+    <div class="buffer-wrap">
+      <div class="ptr-row top" id="ptrIn"></div>
+      <div class="buffer" id="buffer"></div>
+      <div class="ptr-row bot" id="ptrOut"></div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="sim-cols">
+      <div>
+        <div class="threads" id="threads"></div>
+        <div class="semrow" id="semrow"></div>
+        <div class="codehead" style="color:var(--prod)">Producer code <span class="legend" id="legendP"></span></div>
+        <div class="codebox P" id="codeP"></div>
+        <div class="codehead" style="color:var(--cons);margin-top:10px">Consumer code</div>
+        <div class="codebox C" id="codeC"></div>
+      </div>
+      <div>
+        <div class="chart-wrap">
+          <div class="chart-legend">
+            <span><i style="background:var(--mem)"></i><span id="lgCount">count variable</span></span>
+            <span><i style="background:var(--ok)"></i>actual items in buffer</span>
+            <span><i style="background:var(--bad);opacity:.35;height:10px"></i>drift</span>
+          </div>
+          <canvas id="chart" height="170"></canvas>
+        </div>
+        <div class="chart-wrap" style="margin-top:10px">
+          <div class="chart-legend"><span><b style="color:var(--text)">CPU schedule</b>: which thread ran each tick (most recent on the right)</span></div>
+          <canvas id="sched" height="56"></canvas>
+        </div>
+        <div class="codehead" style="margin-top:12px">Event log</div>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 4. FIX ================= -->
+<section class="block" id="fix">
+  <div class="sec-num">04 · The solution</div>
+  <h2>Semaphores: count with the OS, not with a plain integer</h2>
+  <p class="sub">The classic fix uses three semaphores. <code>empty</code> counts free slots, <code>full</code> counts filled slots, and the binary semaphore <code>mutex</code> ensures only one thread touches the buffer and the <code>in</code>/<code>out</code> indices at a time. Each <code>wait()</code> and <code>signal()</code> is atomic, so no update can be lost. A thread that would overflow or underflow the buffer <b>blocks</b> instead of spinning.</p>
+  <div class="grid2">
+    <div>
+      <div class="codehead" style="color:var(--prod)">Producer</div>
+<pre class="code"><span class="kw">semaphore</span> mutex = 1, empty = N, full = 0;
+
+<span class="kw">while</span> (<span class="kw">true</span>) {
+    <span class="cm">/* produce next_produced */</span>
+    <span class="hl-ok">wait(empty);</span>   <span class="cm">// block if no free slot</span>
+    <span class="hl-ok">wait(mutex);</span>   <span class="cm">// enter critical section</span>
+    buffer[in] = next_produced;
+    in = (in + 1) % N;
+    <span class="hl-ok">signal(mutex);</span> <span class="cm">// leave critical section</span>
+    <span class="hl-ok">signal(full);</span>  <span class="cm">// one more filled slot</span>
+}</pre>
+    </div>
+    <div>
+      <div class="codehead" style="color:var(--cons)">Consumer</div>
+<pre class="code">
+
+<span class="kw">while</span> (<span class="kw">true</span>) {
+    <span class="hl-ok">wait(full);</span>    <span class="cm">// block if nothing to take</span>
+    <span class="hl-ok">wait(mutex);</span>
+    next_consumed = buffer[out];
+    out = (out + 1) % N;
+    <span class="hl-ok">signal(mutex);</span>
+    <span class="hl-ok">signal(empty);</span> <span class="cm">// one more free slot</span>
+    <span class="cm">/* consume next_consumed */</span>
+}</pre>
+    </div>
+  </div>
+
+  <div class="panel diagram" style="margin-top:16px">
+    <h3>Unsynchronized vs. mutually exclusive</h3>
+    <svg viewBox="0 0 900 250" role="img" aria-label="Timeline comparison: without a lock both threads' load-modify-store overlap and count ends at 4; with a lock the consumer waits and count ends at 5">
+      <style>
+        .lbl { font: 600 13px Inter, sans-serif; fill: var(--text); }
+        .sm { font: 600 11px 'JetBrains Mono', monospace; fill: #fff; }
+        .mut { font: 500 12px Inter, sans-serif; fill: var(--muted); }
+        .res { font: 800 14px 'JetBrains Mono', monospace; }
+      </style>
+      <text x="0" y="20" class="lbl">Without a lock</text>
+      <text x="0" y="56" class="mut">Producer</text>
+      <text x="0" y="92" class="mut">Consumer</text>
+      <rect x="90" y="40" width="80" height="24" rx="5" fill="var(--prod)"/><text x="130" y="56" text-anchor="middle" class="sm">load 5</text>
+      <rect x="175" y="40" width="80" height="24" rx="5" fill="var(--prod)"/><text x="215" y="56" text-anchor="middle" class="sm">+1 → 6</text>
+      <rect x="260" y="76" width="80" height="24" rx="5" fill="var(--cons)"/><text x="300" y="92" text-anchor="middle" class="sm">load 5</text>
+      <rect x="345" y="76" width="80" height="24" rx="5" fill="var(--cons)"/><text x="385" y="92" text-anchor="middle" class="sm">−1 → 4</text>
+      <rect x="430" y="40" width="80" height="24" rx="5" fill="var(--prod)"/><text x="470" y="56" text-anchor="middle" class="sm">store 6</text>
+      <rect x="515" y="76" width="80" height="24" rx="5" fill="var(--cons)"/><text x="555" y="92" text-anchor="middle" class="sm">store 4</text>
+      <rect x="258" y="34" width="256" height="72" rx="8" fill="none" stroke="var(--bad)" stroke-width="2" stroke-dasharray="5 4"/>
+      <text x="386" y="122" text-anchor="middle" class="mut" style="fill:var(--bad)">critical sections overlap</text>
+      <text x="620" y="74" class="res" style="fill:var(--bad)">count = 4 ✗</text>
+
+      <text x="0" y="160" class="lbl">With mutex</text>
+      <text x="0" y="196" class="mut">Producer</text>
+      <text x="0" y="232" class="mut">Consumer</text>
+      <rect x="90" y="180" width="255" height="24" rx="5" fill="none" stroke="var(--ok)" stroke-width="2"/>
+      <rect x="93" y="183" width="80" height="18" rx="4" fill="var(--prod)"/><text x="133" y="196" text-anchor="middle" class="sm">load 5</text>
+      <rect x="177" y="183" width="80" height="18" rx="4" fill="var(--prod)"/><text x="217" y="196" text-anchor="middle" class="sm">+1 → 6</text>
+      <rect x="261" y="183" width="80" height="18" rx="4" fill="var(--prod)"/><text x="301" y="196" text-anchor="middle" class="sm">store 6</text>
+      <rect x="140" y="219" width="205" height="18" rx="4" fill="var(--bad-soft)"/><text x="242" y="232" text-anchor="middle" class="mut" style="fill:var(--bad);font-size:11px">blocked on wait(mutex)</text>
+      <rect x="350" y="216" width="255" height="24" rx="5" fill="none" stroke="var(--ok)" stroke-width="2"/>
+      <rect x="353" y="219" width="80" height="18" rx="4" fill="var(--cons)"/><text x="393" y="232" text-anchor="middle" class="sm">load 6</text>
+      <rect x="437" y="219" width="80" height="18" rx="4" fill="var(--cons)"/><text x="477" y="232" text-anchor="middle" class="sm">−1 → 5</text>
+      <rect x="521" y="219" width="80" height="18" rx="4" fill="var(--cons)"/><text x="561" y="232" text-anchor="middle" class="sm">store 5</text>
+      <text x="620" y="214" class="res" style="fill:var(--ok)">count = 5 ✓</text>
+    </svg>
+  </div>
+
+  <div class="concepts">
+    <div class="concept"><h3>1 · Mutual exclusion</h3><p>If a thread is executing in its critical section, no other thread can execute in its own. Here, <code>mutex</code> provides this.</p></div>
+    <div class="concept"><h3>2 · Progress</h3><p>If no thread is in a critical section, one that wants to enter cannot be postponed forever by threads that don't want to enter.</p></div>
+    <div class="concept"><h3>3 · Bounded waiting</h3><p>There is a limit on how many times other threads can enter their critical sections before a waiting thread gets its turn.</p></div>
+  </div>
+  <div class="callout ok"><b>Order matters.</b> If a producer calls <code>wait(mutex)</code> <i>before</i> <code>wait(empty)</code>, it can block on a full buffer while still holding the mutex. Then no consumer can enter to free a slot, and the system <b>deadlocks</b>. Always acquire the counting semaphore first.</div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">Interactive teaching demo for Operating Systems: process synchronization and the bounded-buffer problem. Pure HTML/CSS/JS, no dependencies.</div>
+</footer>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/* ---------- theme toggle ---------- */
+$('#themeBtn').addEventListener('click', () => {
+  const root = document.documentElement;
+  const cur = root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.dataset.theme = cur === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('pc-theme', root.dataset.theme); } catch (e) {}
+  drawCharts();
+});
+try { const t = localStorage.getItem('pc-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+
+/* =====================================================================
+   SECTION 1 — instruction-level race
+   ===================================================================== */
+const PROG = {
+  P: [ { op: 'load', txt: 'R1 = count' }, { op: 'add', txt: 'R1 = R1 + 1' }, { op: 'store', txt: 'count = R1' } ],
+  C: [ { op: 'load', txt: 'R2 = count' }, { op: 'sub', txt: 'R2 = R2 - 1' }, { op: 'store', txt: 'count = R2' } ],
+};
+const NAME = { P: 'Producer', C: 'Consumer' };
+const REG = { P: 'R1', C: 'R2' };
+let R; // race state
+let busy = false;
+
+function raceReset() {
+  R = { count: 5, reg: { P: null, C: null }, pc: { P: 0, C: 0 }, seq: [], memHist: [] };
+  renderRace();
+  $('#narration').innerHTML = 'Pick a preset or click a step button to begin.';
+  $$('#presetSeg button').forEach(b => b.classList.remove('on'));
+}
+
+function renderRace() {
+  for (const t of ['P', 'C']) {
+    $('#instr' + t).innerHTML = PROG[t].map((ins, i) => {
+      const cls = i < R.pc[t] ? 'done' : (i === R.pc[t] ? 'next' : '');
+      return `<li class="${cls}"><span class="n">${i + 1}</span>${ins.txt}<span class="tag">${ins.op.toUpperCase()}</span></li>`;
+    }).join('');
+    $('#reg' + t).textContent = R.reg[t] === null ? '–' : R.reg[t];
+    $('#step' + t).disabled = busy || R.pc[t] >= 3;
+    $('#cpu' + t).classList.toggle('active', R.seq.length > 0 && R.seq[R.seq.length - 1] === t && R.pc[t] < 3);
+  }
+  $('#memVal').textContent = R.count;
+  // timeline
+  const cells = { P: [], C: [], M: [] };
+  for (let i = 0; i < 6; i++) {
+    const s = R.seq[i];
+    if (!s) { cells.P.push('<div class="tl-cell"></div>'); cells.C.push('<div class="tl-cell"></div>'); cells.M.push('<div class="tl-cell"></div>'); continue; }
+    const k = R.seq.slice(0, i + 1).filter(x => x === s).length - 1;
+    const lbl = PROG[s][k].op === 'load' ? 'LOAD' : PROG[s][k].op === 'store' ? 'STORE' : (s === 'P' ? '+1' : '−1');
+    cells[s].push(`<div class="tl-cell ${s}">${lbl}</div>`);
+    cells[s === 'P' ? 'C' : 'P'].push('<div class="tl-cell"></div>');
+    cells.M.push(`<div class="tl-cell mem">${R.memHist[i]}</div>`);
+  }
+  $('#tlP').innerHTML = cells.P.join(''); $('#tlC').innerHTML = cells.C.join(''); $('#tlM').innerHTML = cells.M.join('');
+  $('#tlSeq').textContent = R.seq.join(' ');
+  const v = $('#verdict');
+  if (R.pc.P === 3 && R.pc.C === 3) {
+    if (R.count === 5) { v.className = 'verdict ok'; v.textContent = '✓ Correct: count = 5'; }
+    else { v.className = 'verdict bad'; v.textContent = `✗ Race! count = ${R.count}`; }
+  } else { v.className = 'verdict pending'; v.textContent = 'Not finished yet'; }
+  $('#playPreset').disabled = busy;
+}
+
+function fly(fromEl, toEl, text, color) {
+  return new Promise(res => {
+    const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+    const tok = document.createElement('div');
+    tok.className = 'token'; tok.textContent = text; tok.style.background = color;
+    document.body.appendChild(tok);
+    const w = tok.offsetWidth, h = tok.offsetHeight;
+    tok.style.left = (a.left + a.width / 2 - w / 2) + 'px';
+    tok.style.top = (a.top + a.height / 2 - h / 2) + 'px';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      tok.style.transform = `translate(${b.left + b.width / 2 - (a.left + a.width / 2)}px, ${b.top + b.height / 2 - (a.top + a.height / 2)}px)`;
+    }));
+    setTimeout(() => { tok.remove(); res(); }, 620);
+  });
+}
+
+function narrate(t, ins, before) {
+  const other = t === 'P' ? 'C' : 'P';
+  const r = REG[t];
+  let msg;
+  if (ins.op === 'load') {
+    msg = `<b style="color:var(--${t === 'P' ? 'prod' : 'cons'})">${NAME[t]}</b> reads <code>count</code> (${R.count}) into its private register ${r}.`;
+    if (R.pc[other] > 0 && R.pc[other] < 3) msg += ` <b style="color:var(--bad)">⚠ ${NAME[other]} already read count and hasn't written back yet. Both now hold a stale copy.</b>`;
+  } else if (ins.op === 'store') {
+    msg = `<b style="color:var(--${t === 'P' ? 'prod' : 'cons'})">${NAME[t]}</b> writes ${r} = ${R.reg[t]} back to <code>count</code> (was ${before}).`;
+    if (R.pc[other] === 3 && R.count !== 5) msg += ` <b style="color:var(--bad)">This overwrites ${NAME[other]}'s update. It is lost.</b>`;
+    else if (R.pc[other] > 0 && R.pc[other] < 3) msg += ` ${NAME[other]} is still holding an old value in ${REG[other]} and will overwrite this when it stores.`;
+  } else {
+    msg = `<b style="color:var(--${t === 'P' ? 'prod' : 'cons'})">${NAME[t]}</b> computes ${r} = ${R.reg[t]} inside the CPU. Shared memory hasn't changed yet.`;
+  }
+  if (R.pc.P === 3 && R.pc.C === 3) {
+    msg += R.count === 5 ? ' <b style="color:var(--ok)">Both finished without overlapping, so the result is correct.</b>'
+      : ` <b style="color:var(--bad)">Final count is ${R.count}, but it should be 5. The ${R.count === 4 ? 'producer\'s increment' : 'consumer\'s decrement'} was lost.</b>`;
+  }
+  $('#narration').innerHTML = msg;
+}
+
+async function raceStep(t) {
+  if (busy || R.pc[t] >= 3) return;
+  busy = true; renderRace();
+  const ins = PROG[t][R.pc[t]];
+  const before = R.count;
+  const color = css(t === 'P' ? '--prod' : '--cons');
+  if (ins.op === 'load') {
+    await fly($('#mem'), $('#reg' + t), R.count, css('--mem'));
+    R.reg[t] = R.count;
+  } else if (ins.op === 'store') {
+    await fly($('#reg' + t), $('#mem'), R.reg[t], color);
+    R.count = R.reg[t];
+    $('#mem').classList.remove('flash'); void $('#mem').offsetWidth; $('#mem').classList.add('flash');
+  } else {
+    R.reg[t] += ins.op === 'add' ? 1 : -1;
+    await sleep(250);
+  }
+  R.pc[t]++;
+  R.seq.push(t);
+  R.memHist.push(R.count);
+  busy = false;
+  narrate(t, ins, before);
+  renderRace();
+}
+
+async function playSeq(seq) {
+  raceReset();
+  $$('#presetSeg button').forEach(b => b.classList.toggle('on', b.dataset.seq === seq));
+  for (const t of seq) { await raceStep(t); await sleep(650); }
+}
+
+$('#stepP').onclick = () => raceStep('P');
+$('#stepC').onclick = () => raceStep('C');
+$('#raceReset').onclick = () => { if (!busy) raceReset(); };
+$$('#presetSeg button').forEach(b => b.onclick = () => {
+  if (busy) return;
+  $$('#presetSeg button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('#playPreset').onclick = () => {
+  if (busy) return;
+  const on = $('#presetSeg button.on') || $('#presetSeg button[data-seq="PPCCPC"]');
+  playSeq(on.dataset.seq);
+};
+raceReset();
+
+/* =====================================================================
+   SECTION 2 — all 20 interleavings
+   ===================================================================== */
+function allSeqs(p, c, pre = '', out = []) {
+  if (!p && !c) { out.push(pre); return out; }
+  if (p) allSeqs(p - 1, c, pre + 'P', out);
+  if (c) allSeqs(p, c - 1, pre + 'C', out);
+  return out;
+}
+function runSeq(seq) {
+  let count = 5; const reg = { P: 0, C: 0 }, pc = { P: 0, C: 0 };
+  for (const t of seq) {
+    const op = PROG[t][pc[t]++].op;
+    if (op === 'load') reg[t] = count;
+    else if (op === 'store') count = reg[t];
+    else reg[t] += op === 'add' ? 1 : -1;
+  }
+  return count;
+}
+(function buildInterleavings() {
+  const seqs = allSeqs(3, 3);
+  const res = seqs.map(s => ({ s, v: runSeq(s) }));
+  const tally = { 4: 0, 5: 0, 6: 0 };
+  res.forEach(r => tally[r.v]++);
+  $('#tally').innerHTML = `
+    <div><b style="color:var(--ok)">${tally[5]}</b>correct (5)</div>
+    <div><b style="color:var(--bad)">${tally[4]}</b>lost increment (4)</div>
+    <div><b style="color:var(--bad)">${tally[6]}</b>lost decrement (6)</div>`;
+  const max = Math.max(...Object.values(tally));
+  $('#bars').innerHTML = [4, 5, 6].map(v => `
+    <div class="bar"><div class="cap" style="color:var(--${v === 5 ? 'ok' : 'bad'})">${tally[v]}</div>
+    <div class="fill" style="height:${(tally[v] / max) * 100}px;background:var(--${v === 5 ? 'ok' : 'bad'})"></div>
+    <div class="x">count = ${v}</div></div>`).join('');
+  $('#interGrid').innerHTML = res.map(({ s, v }) => {
+    const k = { P: 0, C: 0 };
+    const cells = [...s].map(t => { const op = PROG[t][k[t]++].op; return `<i class="${t}" title="${NAME[t]} ${op}">${t}${k[t]}</i>`; }).join('');
+    return `<button class="inter ${v === 5 ? 'good' : 'badr'}" data-seq="${s}"><div class="strip">${cells}</div>
+      <div class="res"><span class="mono" style="color:var(--muted)">${s}</span><b>${v}${v === 5 ? ' ✓' : ' ✗'}</b></div></button>`;
+  }).join('');
+  $$('#interGrid .inter').forEach(b => b.onclick = () => {
+    if (busy) return;
+    $('#race').scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => playSeq(b.dataset.seq), 450);
+  });
+})();
+
+/* =====================================================================
+   SECTION 3 — bounded buffer simulator
+   ===================================================================== */
+const N = 8;
+const CODE = {
+  race: {
+    P: [
+      ['while (count == N) ;', 'spin'],
+      ['buffer[in] = item;', ''],
+      ['in = (in + 1) % N;', ''],
+      ['reg = count;', 'crit'],
+      ['reg = reg + 1;', 'crit'],
+      ['count = reg;', 'crit'],
+    ],
+    C: [
+      ['while (count == 0) ;', 'spin'],
+      ['item = buffer[out];', ''],
+      ['out = (out + 1) % N;', ''],
+      ['reg = count;', 'crit'],
+      ['reg = reg - 1;', 'crit'],
+      ['count = reg;', 'crit'],
+    ],
+  },
+  sem: {
+    P: [
+      ['wait(empty);', 'lock'],
+      ['wait(mutex);', 'lock'],
+      ['buffer[in] = item;', ''],
+      ['in = (in + 1) % N;', ''],
+      ['signal(mutex);', 'lock'],
+      ['signal(full);', 'lock'],
+    ],
+    C: [
+      ['wait(full);', 'lock'],
+      ['wait(mutex);', 'lock'],
+      ['item = buffer[out];', ''],
+      ['out = (out + 1) % N;', ''],
+      ['signal(mutex);', 'lock'],
+      ['signal(empty);', 'lock'],
+    ],
+  },
+};
+
+let S, timer = null, mode = 'race';
+const HIST = 160;
+
+function itemColor(id) { return `hsl(${(id * 47) % 360} 62% 48%)`; }
+
+function simReset() {
+  const nP = +$('#nP').value, nC = +$('#nC').value;
+  S = {
+    tick: 0, buffer: Array(N).fill(null), in: 0, out: 0, count: 0,
+    sem: { empty: N, full: 0, mutex: 1 }, q: { empty: [], full: [], mutex: [] },
+    next: 1, produced: 0, consumed: 0, lost: 0, bad: 0,
+    threads: [], cur: null, hist: [], sched: [],
+  };
+  for (let i = 0; i < nP; i++) S.threads.push({ id: 'P' + (i + 1), k: 'P', idx: i, pc: 0, reg: null, item: null, blocked: null, spin: false });
+  for (let i = 0; i < nC; i++) S.threads.push({ id: 'C' + (i + 1), k: 'C', idx: i, pc: 0, reg: null, item: null, blocked: null, spin: false });
+  buildBuffer();
+  $('#log').innerHTML = '';
+  log(`Reset: ${nP} producer(s), ${nC} consumer(s), ${mode === 'race' ? 'NO synchronization' : 'semaphores + mutex'}.`);
+  S.hist.push([0, 0]);
+  renderSim(); drawCharts();
+}
+
+function buildBuffer() {
+  $('#buffer').innerHTML = Array.from({ length: N }, (_, i) => `<div class="slot" data-i="${i}"><span class="idx">${i}</span></div>`).join('');
+  $('#ptrIn').innerHTML = Array.from({ length: N }, (_, i) => `<div class="ptr in" data-i="${i}">in ▼</div>`).join('');
+  $('#ptrOut').innerHTML = Array.from({ length: N }, (_, i) => `<div class="ptr out" data-i="${i}">▲ out</div>`).join('');
+}
+
+function log(msg, cls = '') {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.innerHTML = `<span class="t">[${String(S ? S.tick : 0).padStart(4, ' ')}]</span> ${msg}`;
+  const L = $('#log');
+  L.prepend(el);
+  while (L.children.length > 80) L.lastChild.remove();
+}
+
+function slotEl(i) { return $(`#buffer .slot[data-i="${i}"]`); }
+function setChip(i, id, pop) {
+  const s = slotEl(i);
+  let c = s.querySelector('.chip');
+  if (id === null) { if (c) c.remove(); return; }
+  if (!c) { c = document.createElement('div'); c.className = 'chip'; s.appendChild(c); }
+  c.textContent = id; c.style.background = itemColor(id);
+  if (pop) { c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop'); }
+}
+function slotError(i, text) {
+  const s = slotEl(i);
+  s.classList.remove('err'); void s.offsetWidth; s.classList.add('err');
+  const b = document.createElement('div'); b.className = 'burst'; b.innerHTML = text;
+  s.appendChild(b); setTimeout(() => b.remove(), 1200);
+}
+
+const tag = (t) => `<span class="${t.k}">${t.id}</span>`;
+
+/* semaphore helpers */
+function semWait(t, name) {
+  if (S.sem[name] > 0) { S.sem[name]--; return true; }
+  t.blocked = name; S.q[name].push(t);
+  log(`${tag(t)} blocks on wait(${name}). ${name} = 0`);
+  return false;
+}
+function semSignal(t, name) {
+  if (S.q[name].length) {
+    const w = S.q[name].shift();
+    w.blocked = null; w.pc++;   // waiter completes its wait()
+    if (w.pc === 1 && w.k === 'P' && name === 'empty') w.item = S.next++;
+    log(`${tag(t)} signal(${name}) wakes ${tag(w)}`);
+  } else S.sem[name]++;
+}
+
+/* one instruction of thread t; returns 'yield' to force a context switch */
+function exec(t) {
+  const pc = t.pc;
+  t.spin = false;
+  if (mode === 'race') {
+    if (t.k === 'P') {
+      switch (pc) {
+        case 0:
+          if (S.count === N) { t.spin = true; return 'yield'; }
+          t.item = S.next++; t.pc = 1; break;
+        case 1: {
+          const old = S.buffer[S.in];
+          if (old !== null) {
+            S.lost++;
+            log(`<span class="e">✗ LOST ITEM</span> ${tag(t)} overwrote unconsumed item #${old} in slot ${S.in}`, '');
+            slotError(S.in, `#${old}<br>LOST`);
+          }
+          S.buffer[S.in] = t.item; S.produced++; setChip(S.in, t.item, true);
+          t.pc = 2; break;
+        }
+        case 2: S.in = (S.in + 1) % N; t.pc = 3; break;
+        case 3: t.reg = S.count; t.pc = 4; break;
+        case 4: t.reg++; t.pc = 5; break;
+        case 5:
+          if (S.count !== t.reg - 1) log(`<span class="e">⚠ STALE WRITE</span> ${tag(t)} stores count = ${t.reg}, but count was ${S.count}. Another thread's update is lost.`);
+          S.count = t.reg; t.pc = 0; t.reg = null; return 'done';
+      }
+    } else {
+      switch (pc) {
+        case 0:
+          if (S.count === 0) { t.spin = true; return 'yield'; }
+          t.pc = 1; break;
+        case 1: {
+          const v = S.buffer[S.out];
+          if (v === null) {
+            S.bad++;
+            log(`<span class="e">✗ EMPTY READ</span> ${tag(t)} read slot ${S.out}, but it holds nothing (count = ${S.count})`);
+            slotError(S.out, 'EMPTY<br>READ');
+          } else { S.consumed++; setChip(S.out, null); }
+          t.item = v; S.buffer[S.out] = null;
+          t.pc = 2; break;
+        }
+        case 2: S.out = (S.out + 1) % N; t.pc = 3; break;
+        case 3: t.reg = S.count; t.pc = 4; break;
+        case 4: t.reg--; t.pc = 5; break;
+        case 5:
+          if (S.count !== t.reg + 1) log(`<span class="e">⚠ STALE WRITE</span> ${tag(t)} stores count = ${t.reg}, but count was ${S.count}. Another thread's update is lost.`);
+          S.count = t.reg; t.pc = 0; t.reg = null; return 'done';
+      }
+    }
+  } else {
+    const mine = t.k === 'P' ? 'empty' : 'full', theirs = t.k === 'P' ? 'full' : 'empty';
+    switch (pc) {
+      case 0:
+        if (!semWait(t, mine)) return 'yield';
+        if (t.k === 'P') t.item = S.next++;
+        t.pc = 1; break;
+      case 1:
+        if (!semWait(t, 'mutex')) return 'yield';
+        t.pc = 2; break;
+      case 2:
+        if (t.k === 'P') {
+          const old = S.buffer[S.in];
+          if (old !== null) { S.lost++; slotError(S.in, 'LOST'); }
+          S.buffer[S.in] = t.item; S.produced++; setChip(S.in, t.item, true);
+        } else {
+          const v = S.buffer[S.out];
+          if (v === null) { S.bad++; slotError(S.out, 'EMPTY'); } else { S.consumed++; setChip(S.out, null); }
+          t.item = v; S.buffer[S.out] = null;
+        }
+        t.pc = 3; break;
+      case 3:
+        if (t.k === 'P') S.in = (S.in + 1) % N; else S.out = (S.out + 1) % N;
+        t.pc = 4; break;
+      case 4: semSignal(t, 'mutex'); t.pc = 5; break;
+      case 5: semSignal(t, theirs); t.pc = 0; return 'done';
+    }
+  }
+  return 'ok';
+}
+
+function pickThread(exclude) {
+  let pool = S.threads.filter(t => !t.blocked && t !== exclude);
+  if (!pool.length) pool = S.threads.filter(t => !t.blocked);
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function simTick() {
+  const chaos = +$('#chaos').value / 100;
+  let t = S.cur;
+  if (!t || t.blocked || Math.random() < chaos) t = pickThread(null);
+  if (!t) { log('<span class="e">DEADLOCK: every thread is blocked</span>'); stopSim(); return; }
+  S.cur = t;
+  S.tick++;
+  const r = exec(t);
+  S.lastLine = { id: t.id };
+  S.sched.push(t);
+  if (S.sched.length > HIST) S.sched.shift();
+  if (r === 'yield' || r === 'done') {
+    // spinning / blocked / finished an iteration: hand the CPU to someone else
+    S.cur = (r === 'done' && Math.random() < 0.35) ? t : pickThread(t);
+  }
+  const actual = S.buffer.filter(x => x !== null).length;
+  S.hist.push([mode === 'race' ? S.count : S.sem.full, actual]);
+  if (S.hist.length > HIST) S.hist.shift();
+  renderSim(); drawCharts();
+}
+
+function renderSim() {
+  // pointers
+  $$('#ptrIn .ptr').forEach((p, i) => p.classList.toggle('on', i === S.in));
+  $$('#ptrOut .ptr').forEach((p, i) => p.classList.toggle('on', i === S.out));
+  // stats
+  const actual = S.buffer.filter(x => x !== null).length;
+  const cval = mode === 'race' ? S.count : S.sem.full;
+  const drift = cval !== actual;
+  $('#stats').innerHTML = `
+    <div class="stat"><div class="k">Produced</div><div class="v">${S.produced}</div></div>
+    <div class="stat"><div class="k">Consumed</div><div class="v">${S.consumed}</div></div>
+    <div class="stat ${S.lost ? 'bad alarm' : 'okk'}"><div class="k">Lost items</div><div class="v">${S.lost}</div></div>
+    <div class="stat ${S.bad ? 'bad alarm' : 'okk'}"><div class="k">Empty reads</div><div class="v">${S.bad}</div></div>
+    <div class="stat ${drift && mode === 'race' ? 'bad' : ''}"><div class="k">${mode === 'race' ? 'count' : 'full (sem)'}</div><div class="v">${cval}</div></div>
+    <div class="stat"><div class="k">Actual items</div><div class="v">${actual}</div></div>`;
+  // threads
+  $('#threads').innerHTML = S.threads.map(t => {
+    const st = t.blocked ? 'blocked' : t.spin ? 'spinning' : t === S.cur ? 'running' : 'ready';
+    const stTxt = t.blocked ? `blocked: ${t.blocked}` : st;
+    return `<div class="thread ${t.k} ${t === S.cur ? 'running' : ''}"><span class="nm">${t.id}</span><span class="st ${st}">${stTxt}</span>
+      <div class="meta">line ${t.pc + 1}${mode === 'race' ? ` · reg ${t.reg === null ? '–' : t.reg}` : ''}${t.item != null ? ` · item #${t.item}` : ''}</div></div>`;
+  }).join('');
+  // semaphores
+  if (mode === 'sem') {
+    $('#semrow').style.display = '';
+    $('#semrow').innerHTML = ['empty', 'full', 'mutex'].map(n => `<div class="sem">${n}<b>${S.sem[n]}</b>${S.q[n].length ? `<span class="q">waiting: ${S.q[n].map(t => t.id).join(', ')}</span>` : ''}</div>`).join('');
+  } else $('#semrow').style.display = 'none';
+  // code
+  for (const k of ['P', 'C']) {
+    const lines = CODE[mode][k];
+    $('#code' + k).innerHTML = lines.map(([txt, kind], i) => {
+      const here = S.threads.filter(t => t.k === k && t.pc === i);
+      const hot = here.some(t => t === S.cur);
+      return `<div class="ln ${kind === 'crit' ? 'crit' : kind === 'lock' ? 'lock' : ''} ${hot ? 'hot' : ''}"><span style="color:var(--muted)">${i + 1}</span>${txt}<span class="badges">${here.map(t => `<span class="bdg" style="${t === S.cur ? '' : 'opacity:.5'}">${t.id}</span>`).join('')}</span></div>`;
+    }).join('');
+  }
+  $('#legendP').innerHTML = mode === 'race'
+    ? '<span style="color:var(--bad)">▌</span> non-atomic count update (race window)'
+    : '<span style="color:var(--ok)">▌</span> atomic semaphore operation';
+  $('#lgCount').textContent = mode === 'race' ? 'count variable' : 'full semaphore';
+}
+
+/* ---------- charts ---------- */
+function setupCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = +c.getAttribute('height');
+  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; c.style.height = h + 'px'; }
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  return [g, w, h];
+}
+function drawCharts() {
+  if (!S) return;
+  // count vs actual
+  const c = $('#chart'); const [g, w, h] = setupCanvas(c);
+  const vals = S.hist.flat();
+  let lo = Math.min(0, ...vals), hi = Math.max(N, ...vals);
+  const padL = 26, padB = 4, padT = 6;
+  const y = v => padT + (hi - v) / (hi - lo) * (h - padT - padB);
+  const x = i => padL + i / (HIST - 1) * (w - padL - 4);
+  g.font = '10px JetBrains Mono, monospace'; g.fillStyle = css('--muted'); g.textAlign = 'right'; g.textBaseline = 'middle';
+  g.strokeStyle = css('--border'); g.lineWidth = 1;
+  const ticks = [lo, 0, N, hi].filter((v, i, a) => a.indexOf(v) === i);
+  ticks.forEach(v => { g.beginPath(); g.moveTo(padL, y(v)); g.lineTo(w, y(v)); g.stroke(); g.fillText(v, padL - 5, y(v)); });
+  // capacity line
+  g.setLineDash([4, 4]); g.strokeStyle = css('--muted'); g.beginPath(); g.moveTo(padL, y(N)); g.lineTo(w, y(N)); g.stroke(); g.setLineDash([]);
+  g.textAlign = 'left'; g.fillText('capacity', padL + 4, y(N) + 8);
+  // drift fill
+  const H = S.hist;
+  g.fillStyle = css('--bad'); g.globalAlpha = .22;
+  g.beginPath();
+  H.forEach((p, i) => i ? g.lineTo(x(i), y(p[0])) : g.moveTo(x(i), y(p[0])));
+  for (let i = H.length - 1; i >= 0; i--) g.lineTo(x(i), y(H[i][1]));
+  g.closePath(); g.fill(); g.globalAlpha = 1;
+  const line = (k, col, wd) => { g.strokeStyle = col; g.lineWidth = wd; g.beginPath(); H.forEach((p, i) => i ? g.lineTo(x(i), y(p[k])) : g.moveTo(x(i), y(p[k]))); g.stroke(); };
+  line(1, css('--ok'), 2.5);
+  line(0, css('--mem'), 2);
+
+  // schedule strip
+  const s = $('#sched'); const [g2, w2, h2] = setupCanvas(s);
+  const rows = S.threads.length, bw = (w2 - 30) / HIST, rh = (h2 - 4) / rows;
+  g2.font = '600 9px Inter, sans-serif'; g2.textBaseline = 'middle'; g2.textAlign = 'left';
+  S.threads.forEach((t, r) => { g2.fillStyle = css(t.k === 'P' ? '--prod' : '--cons'); g2.fillText(t.id, 2, 2 + r * rh + rh / 2); });
+  const off = HIST - S.sched.length;
+  S.sched.forEach((t, i) => {
+    const r = S.threads.indexOf(t);
+    g2.fillStyle = css(t.k === 'P' ? '--prod' : '--cons');
+    g2.fillRect(30 + (off + i) * bw, 2 + r * rh + 1, Math.max(1, bw - .5), rh - 2);
+  });
+}
+
+/* ---------- controls ---------- */
+function stopSim() { clearInterval(timer); timer = null; $('#simPlay').textContent = '▶ Run'; }
+function startSim() {
+  stopSim();
+  timer = setInterval(simTick, 1000 / +$('#speed').value);
+  $('#simPlay').textContent = '⏸ Pause';
+}
+$('#simPlay').onclick = () => timer ? stopSim() : startSim();
+$('#simStep').onclick = () => { stopSim(); simTick(); };
+$('#simReset').onclick = () => { stopSim(); simReset(); };
+$('#speed').oninput = e => { $('#speedLbl').textContent = e.target.value + '/s'; if (timer) startSim(); };
+$('#chaos').oninput = e => { $('#chaosLbl').textContent = e.target.value + '%'; };
+$('#nP').onchange = $('#nC').onchange = () => { const r = !!timer; stopSim(); simReset(); if (r) startSim(); };
+$$('#modeSeg button').forEach(b => b.onclick = () => {
+  mode = b.dataset.mode;
+  $$('#modeSeg button').forEach(x => x.classList.toggle('on', x === b));
+  const r = !!timer; stopSim(); simReset(); if (r) startSim();
+});
+window.addEventListener('resize', drawCharts);
+
+simReset();
+})();
+</script>
+</body>
+</html>
